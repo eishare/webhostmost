@@ -1,4 +1,4 @@
-### 此版本在webhostmost丝滑部署，但教程仅供测试、学习
+### 仅在webhostmost测试，可丝滑部署，但教程仅供测试、学习
 ### Webhostmost可能会对代理限流、甚至关闭+清空node.js部署的app
 
 * Vless+ws+tls 单节点部署+多优选域名 说明：
