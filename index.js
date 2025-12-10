@@ -1,65 +1,58 @@
-#!/bin/bash
+// DirectAdmin webhostmost版
+process.on("uncaughtException", () => { }); process.on("unhandledRejection", () => { });
 
-DOMAIN="$1"
-if [ -z "$DOMAIN" ]; then
-  echo "Usage: bash vless.sh yourdomain.com"
-  exit 1
-fi
+const UUID = (process.env.UUID ?? "uuid").trim();
+const DOMAIN = (process.env.DOMAIN ?? "my.domain.com").trim();
 
-UUID=$(cat /proc/sys/kernel/random/uuid)
-PORT=2052
-PATH="/$(echo $UUID | cut -c1-8)"
+const PORT = Number(process.env.PORT) || 0;  // 0=随机端口
 
-mkdir -p ~/vless
-cat > ~/vless/config.json <<EOF
-{
-  "log": {
-    "level": "info"
-  },
-  "inbounds": [
-    {
-      "type": "vless",
-      "listen": "0.0.0.0",
-      "listen_port": $PORT,
-      "users": [
-        {
-          "uuid": "$UUID"
-        }
-      ],
-      "transport": {
-        "type": "ws",
-        "path": "$PATH"
-      }
+const http = require("http");
+const net = require("net");
+const { WebSocket } = require("ws");
+
+const ADDR = ["www.visa.cn", "usa.visa.com", "time.is", "www.wto.org"];
+const hex = UUID.replace(/-/g, "");
+
+const server = http.createServer((req, res) => {
+    if (req.url === `/${UUID}`) {
+        res.end(ADDR.map(a => `vless://${UUID}@${a}:443?encryption=none&security=tls&sni=${DOMAIN}&fp=chrome&type=ws&host=${DOMAIN}&path=%2F#DA-${a}`).join("\n") + "\n");
+    } else {
+        res.end("OK");
     }
-  ],
-  "outbounds": [
-    { "type": "direct" },
-    { "type": "block", "tag": "block" }
-  ]
-}
-EOF
+});
 
-# Download sing-box (x86_64)
-wget -O ~/vless/sing-box.tar.gz https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-1.7.3-linux-amd64.tar.gz
-tar -xzf ~/vless/sing-box.tar.gz -C ~/vless
-mv ~/vless/sing-box*/sing-box ~/vless/sing-box
-chmod +x ~/vless/sing-box
+const wss = new WebSocket.Server({ server });  // 必须这样写！
 
-# Start the service
-pkill -f sing-box
-nohup ~/vless/sing-box run -c ~/vless/config.json >/dev/null 2>&1 &
+wss.on("connection", ws => {
+    ws.once("message", m => {
+        try {
+            // UUID校验
+            for (let i = 0; i < 16; i++)if (m[1 + i] !== parseInt(hex.substr(i * 2, 2), 16)) return ws.close();
 
-echo ""
-echo "==============================="
-echo "  VLESS 节点部署成功"
-echo "==============================="
-echo "域名: $DOMAIN"
-echo "UUID: $UUID"
-echo "WebSocket PATH: $PATH"
-echo "本地监听端口: $PORT"
-echo ""
-echo "注意：请在 Cloudflare 启用代理（橙色云）"
-echo ""
-echo "=== 客户端节点信息 ==="
-echo ""
-echo "vless://$UUID@$DOMAIN:443?encryption=none&security=tls&type=ws&host=$DOMAIN&path=$PATH#VLESS-CF"
+            let p = 17;
+            const atyp = m[p++];
+            let host = "";
+            if (atyp === 1) {
+                host = `${m[p++]}.${m[p++]}.${m[p++]}.${m[p++]}`;
+            } else if (atyp === 2) {
+                const len = m[p++];
+                host = new TextDecoder().decode(m.slice(p, p += len));
+            } else return ws.close();
+
+            const port = m.readUInt16BE(p);
+
+            ws.send(new Uint8Array([m[0], 0]));
+
+            const r = net.connect(port, host, () => { r.write(m.slice(p + 2)) });
+            ws.on("message", d => r.write(d));
+            r.on("data", d => ws.send(d));
+            r.on("error", () => ws.close());
+            ws.on("close", () => r.destroy());
+        } catch { ws.close() }
+    });
+});
+
+server.listen(PORT, "127.0.0.1", () => {
+    console.log(`VLESS 完美运行 → 127.0.0.1:${server.address().port}`);
+    console.log(`访问 → https://${DOMAIN}/${UUID}`);
+});
