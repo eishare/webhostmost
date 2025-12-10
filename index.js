@@ -4,7 +4,7 @@ process.on("uncaughtException", () => { }); process.on("unhandledRejection", () 
 const UUID = (process.env.UUID ?? "uuid").trim();
 const DOMAIN = (process.env.DOMAIN ?? "my.domain.com").trim();
 
-const PORT = Number(process.env.PORT) || 0;  // 0=随机端口
+const PORT = Number(process.env.PORT) || 0;  // 随机端口
 
 const http = require("http");
 const net = require("net");
